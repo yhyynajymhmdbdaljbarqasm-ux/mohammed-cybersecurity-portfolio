@@ -1,0 +1,374 @@
+مشروع تطوير تطبيقات الويب - الكود الكامل الجاهز للنسخ
+
+ملاحظة: لم يتم حذف أي صفحة أو وظيفة من النسخة السابقة؛ تمت إضافة/تشديد التحقق والأمان المطلوب فقط.
+
+==================== README.txt ====================
+
+النسخة النهائية لمشروع تطوير تطبيقات الويب
+
+تم تطبيق المتطلبات الأساسية:
+1- واجهة مستخدم حديثة ومتجاوبة.
+2- تسجيل دخول.
+3- إنشاء أول حساب مدير بشكل آمن.
+4- Dashboard.
+5- CRUD كامل للكورسات: إضافة/عرض/تعديل/حذف.
+6- CRUD كامل للطلاب: تسجيل/عرض/تعديل/حذف.
+7- Validation للمدخلات.
+8- Password hashing و password_verify.
+9- Prepared Statements لمنع SQL Injection.
+10- htmlspecialchars عند عرض البيانات لمنع XSS.
+11- صلاحيات admin.
+12- CSRF على عمليات POST.
+13- رفع الصور مع فحص MIME فعلي وحد 5MB.
+14- Transaction عند ربط الطالب بالكورس وعند حذفه.
+15- قاعدة البيانات والجداول موجودة في schema.sql.
+
+التشغيل:
+- استورد schema.sql في phpMyAdmin.
+- تأكد من db.php.
+- ضع المشروع داخل htdocs.
+- افتح register_admin.php مرة واحدة لإنشاء المدير الأول.
+- بعدها افتح login.php.
+- بعد تسجيل الدخول تصبح index.php هي Dashboard.
+
+
+
+==================== schema.sql ====================
+
+CREATE DATABASE IF NOT EXISTS courses_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE courses_db;
+CREATE TABLE IF NOT EXISTS admins(id INT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(100) NOT NULL,email VARCHAR(190) NOT NULL UNIQUE,password VARCHAR(255) NOT NULL,role VARCHAR(30) NOT NULL DEFAULT 'user',status TINYINT(1) NOT NULL DEFAULT 1,last_login_at DATETIME NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS course(id INT AUTO_INCREMENT PRIMARY KEY,course_name VARCHAR(150) NOT NULL,price DECIMAL(10,2) NOT NULL DEFAULT 0,course_image VARCHAR(255) NOT NULL) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS students(id INT AUTO_INCREMENT PRIMARY KEY,student_name VARCHAR(150) NOT NULL,phone VARCHAR(30) DEFAULT '',student_image VARCHAR(255) NOT NULL,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS course_student(course_id INT NOT NULL,student_id INT NOT NULL,PRIMARY KEY(course_id,student_id),FOREIGN KEY(course_id) REFERENCES course(id) ON DELETE CASCADE,FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE) ENGINE=InnoDB;
+
+
+==================== style.css ====================
+
+
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#f5f7fb;color:#17172a}
+nav{position:sticky;top:0;z-index:10;padding:15px 5%;background:#ffffffdd;backdrop-filter:blur(14px);border-bottom:1px solid #eee;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+nav b{margin-left:auto;color:#6c5ce7;font-size:20px}nav a{padding:10px 14px;border-radius:12px;text-decoration:none;color:#333}nav a:hover{background:#efefff}
+.wrap{width:min(1100px,92%);margin:35px auto}.hero{padding:35px;border-radius:28px;color:white;background:linear-gradient(135deg,#6c5ce7,#00b894);margin-bottom:25px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}.card{background:#fff;padding:25px;border-radius:24px;box-shadow:0 12px 35px #20205012}
+input,select{width:100%;padding:14px;border:1px solid #ddd;border-radius:12px;font-size:15px}label{display:block;font-weight:bold;margin:15px 0 7px}
+button,.btn{border:0;border-radius:12px;padding:14px 18px;background:linear-gradient(90deg,#6c5ce7,#00b894);color:#fff;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block}
+.btn-danger{background:#fff0f0;color:#b42318}.msg{padding:13px;border-radius:12px;background:#eefaf6;color:#087f5b;margin:12px 0}.err{background:#fff0f0;color:#b42318}
+table{width:100%;border-collapse:collapse;background:#fff;min-width:750px}th,td{padding:14px;border-bottom:1px solid #eee;text-align:right}.table{overflow:auto;border-radius:20px;box-shadow:0 12px 35px #20205010}
+img.course-img{width:100%;height:190px;object-fit:cover;border-radius:18px}.student-img{width:50px;height:50px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:8px}
+.actions{display:flex;gap:7px;align-items:center}.actions form{margin:0}.stats{display:flex;gap:15px;flex-wrap:wrap}.stat{padding:18px 25px;background:#ffffff22;border-radius:18px;text-align:center}.stat strong{font-size:28px;display:block}
+@media(max-width:700px){nav b{width:100%;margin-left:0}.hero{padding:25px}}
+
+
+
+==================== db.php ====================
+
+<?php
+$host="localhost";$user="root";$password="";$dbname="courses_db";
+$conn=new mysqli($host,$user,$password,$dbname);
+if($conn->connect_error) die("فشل الاتصال بقاعدة البيانات.");
+$conn->set_charset("utf8mb4");
+?>
+
+
+==================== auth.php ====================
+
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+    $isSecure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $isSecure,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+    session_start();
+}
+
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
+$currentUserId = (int) $_SESSION['admin_id'];
+$currentUserName = $_SESSION['admin_name'] ?? '';
+$currentUserEmail = $_SESSION['admin_email'] ?? '';
+$currentUserRole = $_SESSION['admin_role'] ?? 'user';
+
+function isLoggedIn() {
+    return isset($_SESSION['admin_id']);
+}
+
+function requireLogin() {
+    if (!isset($_SESSION['admin_id'])) {
+        header("Location: login.php");
+        exit();
+    }
+}
+
+function requireAdmin() {
+    if (!isset($_SESSION['admin_id'])) {
+        header("Location: login.php");
+        exit();
+    }
+    if (($_SESSION['admin_role'] ?? '') !== 'admin') {
+        http_response_code(403);
+        die("ليس لديك صلاحية للوصول إلى هذه الصفحة.");
+    }
+}
+
+if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function csrf_token() {
+    return $_SESSION['csrf_token'];
+}
+
+function csrf_field() {
+    return '<input type="hidden" name="csrf_token" value="' .
+        htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') . '">';
+}
+
+function verify_csrf() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        die("طريقة الطلب غير مسموحة.");
+    }
+    if (empty($_POST['csrf_token']) || empty($_SESSION['csrf_token'])) {
+        http_response_code(403);
+        die("طلب غير صالح.");
+    }
+    if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        http_response_code(403);
+        die("انتهت صلاحية الطلب أو أن الطلب غير صالح.");
+    }
+}
+
+function e($value) {
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+?>
+
+
+
+==================== login.php ====================
+
+<?php
+session_start();require_once "db.php";
+if(isset($_SESSION["admin_id"])){header("Location:index.php");exit;}
+if(empty($_SESSION["csrf_token"]))$_SESSION["csrf_token"]=bin2hex(random_bytes(32));
+$errors=[];$email="";
+if($_SERVER["REQUEST_METHOD"]==="POST"){
+ if(!hash_equals($_SESSION["csrf_token"],$_POST["csrf_token"]??""))$errors[]="طلب غير صالح.";
+ $email=trim($_POST["email"]??"");$password=$_POST["password"]??"";
+ if(!filter_var($email,FILTER_VALIDATE_EMAIL))$errors[]="البريد الإلكتروني غير صحيح.";
+ if($password==="")$errors[]="كلمة المرور مطلوبة.";
+ if(!$errors){
+  $s=$conn->prepare("SELECT id,name,email,password,role,status FROM admins WHERE email=? LIMIT 1");
+  $s->bind_param("s",$email);$s->execute();$a=$s->get_result()->fetch_assoc();
+  if(!$a||!password_verify($password,$a["password"]))$errors[]="البريد أو كلمة المرور غير صحيحة.";
+  elseif((int)$a["status"]!==1)$errors[]="الحساب غير مفعل.";
+  else{
+   session_regenerate_id(true);$_SESSION["admin_id"]=$a["id"];$_SESSION["admin_name"]=$a["name"];$_SESSION["admin_email"]=$a["email"];$_SESSION["admin_role"]=$a["role"];$_SESSION["csrf_token"]=bin2hex(random_bytes(32));
+   $u=$conn->prepare("UPDATE admins SET last_login_at=NOW() WHERE id=?");$u->bind_param("i",$a["id"]);$u->execute();
+   header("Location:index.php");exit;
+  }
+ }
+}
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تسجيل الدخول</title><link rel="stylesheet" href="style.css"></head><body>
+<div class="wrap" style="max-width:500px;margin-top:80px"><div class="card"><h1>🎓 تسجيل الدخول</h1><p>الدخول إلى لوحة إدارة الكورسات والطلاب.</p>
+<?php foreach($errors as $e):?><div class="msg err"><?=htmlspecialchars($e,ENT_QUOTES,"UTF-8")?></div><?php endforeach;?>
+<form method="post"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION["csrf_token"],ENT_QUOTES,"UTF-8")?>">
+<label>البريد الإلكتروني</label><input type="email" name="email" value="<?=htmlspecialchars($email,ENT_QUOTES,"UTF-8")?>" required>
+<label>كلمة المرور</label><input type="password" name="password" required>
+<br><br><button>دخول</button></form></div></div></body></html>
+
+
+==================== logout.php ====================
+
+<?php
+session_start();$_SESSION=[];session_destroy();header("Location: login.php");exit;
+?>
+
+
+==================== index.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";
+$q=trim($_GET["search"]??"");$like="%".$q."%";
+if($q!==""){$s=$conn->prepare("SELECT id,course_name,price,course_image FROM course WHERE course_name LIKE ? ORDER BY id DESC");$s->bind_param("s",$like);$s->execute();$courses=$s->get_result();}
+else $courses=$conn->query("SELECT id,course_name,price,course_image FROM course ORDER BY id DESC");
+$totalC=(int)($conn->query("SELECT COUNT(*) n FROM course")->fetch_assoc()["n"]??0);
+$totalS=(int)($conn->query("SELECT COUNT(*) n FROM students")->fetch_assoc()["n"]??0);
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard</title><link rel="stylesheet" href="style.css"></head><body>
+<nav><b>🎓 منصة الكورسات</b><a href="index.php">Dashboard</a><a href="students.php">الطلاب</a><a href="add_course.php">إضافة كورس</a><a href="logout.php">خروج</a></nav>
+<div class="wrap"><section class="hero"><h1>لوحة التحكم 🚀</h1><p>مرحباً <?=htmlspecialchars($currentUserName,ENT_QUOTES,"UTF-8")?>، إدارة كاملة للبيانات.</p><div class="stats"><div class="stat"><strong><?=$totalC?></strong>كورسات</div><div class="stat"><strong><?=$totalS?></strong>طلاب</div></div></section>
+<div class="card"><form><input name="search" placeholder="ابحث عن كورس..." value="<?=htmlspecialchars($q,ENT_QUOTES,"UTF-8")?>"><br><br><button>بحث</button></form></div><br>
+<div class="grid">
+<?php if($courses&&$courses->num_rows):while($c=$courses->fetch_assoc()):?><article class="card">
+<?php if($c["course_image"]&&is_file(__DIR__."/".$c["course_image"])):?><img class="course-img" src="<?=htmlspecialchars($c["course_image"],ENT_QUOTES,"UTF-8")?>" alt=""><?php endif;?>
+<h2><?=htmlspecialchars($c["course_name"],ENT_QUOTES,"UTF-8")?></h2><h3><?=number_format((float)$c["price"],2)?> $</h3>
+<div class="actions"><a class="btn" href="edit_course.php?id=<?=$c["id"]?>">تعديل</a><form method="post" action="delete_course.php" onsubmit="return confirm('حذف الكورس؟')"><input type="hidden" name="id" value="<?=$c["id"]?>"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars(csrf_token(),ENT_QUOTES,"UTF-8")?>"><button class="btn-danger">حذف</button></form></div>
+</article><?php endwhile;else:?><div class="card">لا توجد كورسات.</div><?php endif;?>
+</div></div></body></html>
+
+
+==================== dashboard.php ====================
+
+<?php require_once "auth.php";requireAdmin();header("Location:index.php");exit;?>
+
+
+==================== add_course.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";$message="";
+function uploadImage($file){
+ if(($file["error"]??4)!==UPLOAD_ERR_OK||($file["size"]??0)>5242880)return false;
+ $f=new finfo(FILEINFO_MIME_TYPE);$m=$f->file($file["tmp_name"]);$a=["image/jpeg"=>"jpg","image/png"=>"png","image/webp"=>"webp","image/gif"=>"gif"];
+ if(!isset($a[$m]))return false;$d=__DIR__."/uploads/courses";if(!is_dir($d))mkdir($d,0755,true);$n=bin2hex(random_bytes(16)).".".$a[$m];
+ return move_uploaded_file($file["tmp_name"],$d."/".$n)?"uploads/courses/".$n:false;
+}
+if($_SERVER["REQUEST_METHOD"]==="POST"){verify_csrf();$name=trim($_POST["course_name"]??"");$price=trim($_POST["price"]??"");
+ if(mb_strlen($name)<2||mb_strlen($name)>150)$message="اسم الكورس يجب أن يكون بين 2 و150 حرفاً.";elseif(!preg_match('/^\d+(?:\.\d{1,2})?$/',$price)||((float)$price<0)||((float)$price>99999999.99))$message="السعر غير صحيح.";
+ else{$img=uploadImage($_FILES["course_image"]??[]);if(!$img)$message="الصورة غير صحيحة أو أكبر من 5MB.";else{$p=(float)$price;$s=$conn->prepare("INSERT INTO course(course_name,price,course_image) VALUES(?,?,?)");$s->bind_param("sds",$name,$p,$img);if($s->execute()){header("Location:index.php");exit;}@unlink(__DIR__."/".$img);$message="حدث خطأ.";}}}
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>إضافة كورس</title><link rel="stylesheet" href="style.css"></head><body><nav><b>🎓 منصة الكورسات</b><a href="index.php">الرئيسية</a><a href="students.php">الطلاب</a></nav><div class="wrap"><div class="card"><h1>➕ إضافة كورس</h1><?php if($message):?><div class="msg err"><?=htmlspecialchars($message,ENT_QUOTES,"UTF-8")?></div><?php endif;?><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars(csrf_token(),ENT_QUOTES,"UTF-8")?>"><label>اسم الكورس</label><input name="course_name" maxlength="150" required><label>السعر</label><input type="number" name="price" min="0" step=".01" required><label>الصورة</label><input type="file" name="course_image" accept="image/jpeg,image/png,image/webp,image/gif" required><br><br><button>حفظ</button></form></div></div></body></html>
+
+
+==================== edit_course.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";$id=(int)($_GET["id"]??$_POST["id"]??0);if($id<=0)exit("رقم غير صحيح.");
+$s=$conn->prepare("SELECT id,course_name,price,course_image FROM course WHERE id=?");$s->bind_param("i",$id);$s->execute();$course=$s->get_result()->fetch_assoc();if(!$course)exit("الكورس غير موجود.");$message="";
+function up($file){if(($file["error"]??4)!==UPLOAD_ERR_OK||($file["size"]??0)>5242880)return false;$f=new finfo(FILEINFO_MIME_TYPE);$m=$f->file($file["tmp_name"]);$a=["image/jpeg"=>"jpg","image/png"=>"png","image/webp"=>"webp","image/gif"=>"gif"];if(!isset($a[$m]))return false;$d=__DIR__."/uploads/courses";if(!is_dir($d))mkdir($d,0755,true);$n=bin2hex(random_bytes(16)).".".$a[$m];return move_uploaded_file($file["tmp_name"],$d."/".$n)?"uploads/courses/".$n:false;}
+if($_SERVER["REQUEST_METHOD"]==="POST"){verify_csrf();$name=trim($_POST["course_name"]??"");$price=trim($_POST["price"]??"");if(mb_strlen($name)<2||mb_strlen($name)>150)$message="اسم الكورس يجب أن يكون بين 2 و150 حرفاً.";elseif(!preg_match('/^\d+(?:\.\d{1,2})?$/',$price)||((float)$price<0)||((float)$price>99999999.99))$message="السعر غير صحيح.";else{$new=null;if(($_FILES["course_image"]["error"]??4)!==UPLOAD_ERR_NO_FILE)$new=up($_FILES["course_image"]);if(isset($_FILES["course_image"])&&($_FILES["course_image"]["error"]??4)!==UPLOAD_ERR_NO_FILE&&!$new)$message="الصورة غير صحيحة.";if(!$message){$p=(float)$price;if($new){$u=$conn->prepare("UPDATE course SET course_name=?,price=?,course_image=? WHERE id=?");$u->bind_param("sdsi",$name,$p,$new,$id);}else{$u=$conn->prepare("UPDATE course SET course_name=?,price=? WHERE id=?");$u->bind_param("sdi",$name,$p,$id);}if($u->execute()){if($new&&!empty($course["course_image"]))@unlink(__DIR__."/".$course["course_image"]);header("Location:index.php");exit;}if($new)@unlink(__DIR__."/".$new);$message="حدث خطأ.";}}}
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تعديل كورس</title><link rel="stylesheet" href="style.css"></head><body><div class="wrap"><div class="card"><h1>✏️ تعديل الكورس</h1><?php if($message):?><div class="msg err"><?=htmlspecialchars($message,ENT_QUOTES,"UTF-8")?></div><?php endif;?><form method="post" enctype="multipart/form-data"><input type="hidden" name="id" value="<?=$id?>"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars(csrf_token(),ENT_QUOTES,"UTF-8")?>"><label>اسم الكورس</label><input name="course_name" value="<?=htmlspecialchars($course["course_name"],ENT_QUOTES,"UTF-8")?>" required><label>السعر</label><input type="number" name="price" value="<?=htmlspecialchars($course["price"],ENT_QUOTES,"UTF-8")?>" min="0" step=".01" required><label>صورة جديدة اختيارية</label><input type="file" name="course_image" accept="image/jpeg,image/png,image/webp,image/gif"><br><br><button>حفظ التعديل</button></form></div></div></body></html>
+
+
+==================== delete_course.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";
+if($_SERVER["REQUEST_METHOD"]!=="POST")exit("طريقة الحذف غير مسموحة.");verify_csrf();$id=(int)($_POST["id"]??0);if($id<=0)exit("رقم غير صحيح.");
+$s=$conn->prepare("SELECT course_image FROM course WHERE id=?");$s->bind_param("i",$id);$s->execute();$c=$s->get_result()->fetch_assoc();if(!$c)exit("الكورس غير موجود.");
+$d=$conn->prepare("DELETE FROM course WHERE id=?");$d->bind_param("i",$id);if($d->execute()){if(!empty($c["course_image"]))@unlink(__DIR__."/".$c["course_image"]);header("Location:index.php");exit;}exit("حدث خطأ.");
+?>
+
+
+==================== students.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";
+$r=$conn->query("SELECT s.id,s.student_name,s.phone,s.student_image,s.created_at,c.course_name FROM students s LEFT JOIN course_student cs ON s.id=cs.student_id LEFT JOIN course c ON cs.course_id=c.id ORDER BY s.id DESC");
+$total=(int)($conn->query("SELECT COUNT(*) n FROM students")->fetch_assoc()["n"]??0);
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الطلاب</title><link rel="stylesheet" href="style.css"></head><body><nav><b>🎓 منصة الكورسات</b><a href="index.php">Dashboard</a><a href="add_course.php">إضافة كورس</a><a href="logout.php">خروج</a></nav><div class="wrap"><section class="hero"><h1>👨‍🎓 الطلاب</h1><div class="stats"><div class="stat"><strong><?=$total?></strong>إجمالي الطلاب</div></div></section><input id="q" placeholder="بحث باسم الطالب أو الهاتف أو الكورس..."><br><br><div class="table"><table id="t"><tr><th>الطالب</th><th>الهاتف</th><th>الكورس</th><th>التاريخ</th><th>الإجراءات</th></tr><?php while($s=$r->fetch_assoc()):?><tr><td><?php if($s["student_image"]&&is_file(__DIR__."/".$s["student_image"])):?><img class="student-img" src="<?=htmlspecialchars($s["student_image"],ENT_QUOTES,"UTF-8")?>" alt=""><?php endif;?><?=htmlspecialchars($s["student_name"],ENT_QUOTES,"UTF-8")?></td><td><?=htmlspecialchars($s["phone"]??"",ENT_QUOTES,"UTF-8")?></td><td><?=htmlspecialchars($s["course_name"]??"غير مرتبط",ENT_QUOTES,"UTF-8")?></td><td><?=htmlspecialchars($s["created_at"]??"",ENT_QUOTES,"UTF-8")?></td><td class="actions"><a class="btn" href="edit_student.php?id=<?=$s["id"]?>">تعديل</a><form method="post" action="delete_student.php" onsubmit="return confirm('حذف الطالب؟')"><input type="hidden" name="id" value="<?=$s["id"]?>"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars(csrf_token(),ENT_QUOTES,"UTF-8")?>"><button class="btn-danger">حذف</button></form></td></tr><?php endwhile;?></table></div></div><script>q.oninput=()=>{let v=q.value.toLowerCase();document.querySelectorAll('#t tr:not(:first-child)').forEach(x=>x.style.display=x.innerText.toLowerCase().includes(v)?'':'none')}</script></body></html>
+
+
+==================== register.php ====================
+
+<?php
+require_once "auth.php";
+requireAdmin();
+require_once "db.php";
+
+$cid=(int)($_GET["course_id"]??$_POST["course_id"]??0);
+$s=$conn->prepare("SELECT id,course_name FROM course WHERE id=?");
+$s->bind_param("i",$cid);
+$s->execute();
+$course=$s->get_result()->fetch_assoc();
+if(!$course) exit("الكورس غير موجود.");
+$message="";
+
+function studentImage($file){
+    if(($file["error"]??4)!==UPLOAD_ERR_OK || ($file["size"]??0)>5242880) return false;
+    $f=new finfo(FILEINFO_MIME_TYPE);
+    $m=$f->file($file["tmp_name"]);
+    $a=["image/jpeg"=>"jpg","image/png"=>"png","image/webp"=>"webp","image/gif"=>"gif"];
+    if(!isset($a[$m])) return false;
+    $d=__DIR__."/uploads/students";
+    if(!is_dir($d)) mkdir($d,0755,true);
+    $n=bin2hex(random_bytes(16)).".".$a[$m];
+    return move_uploaded_file($file["tmp_name"],$d."/".$n)?"uploads/students/".$n:false;
+}
+
+if($_SERVER["REQUEST_METHOD"]==="POST"){
+    verify_csrf();
+    $name=trim($_POST["student_name"]??"");
+    $phone=trim($_POST["phone"]??"");
+
+    if(mb_strlen($name)<2||mb_strlen($name)>150){
+        $message="اسم الطالب يجب أن يكون بين 2 و150 حرفاً.";
+    }elseif($phone!=="" && !preg_match('/^[0-9+\-\s]{6,20}$/',$phone)){
+        $message="رقم الهاتف غير صحيح.";
+    }else{
+        $img=studentImage($_FILES["student_image"]??[]);
+        if(!$img){
+            $message="الصورة غير صحيحة أو أكبر من 5MB.";
+        }else{
+            $conn->begin_transaction();
+            try{
+                $a=$conn->prepare("INSERT INTO students(student_name,phone,student_image) VALUES(?,?,?)");
+                $a->bind_param("sss",$name,$phone,$img);
+                $a->execute();
+                $sid=$conn->insert_id;
+
+                $b=$conn->prepare("INSERT INTO course_student(course_id,student_id) VALUES(?,?)");
+                $b->bind_param("ii",$cid,$sid);
+                $b->execute();
+                $conn->commit();
+                $message="تم التسجيل بنجاح.";
+            }catch(Throwable $e){
+                $conn->rollback();
+                @unlink(__DIR__."/".$img);
+                $message="حدث خطأ أثناء التسجيل.";
+            }
+        }
+    }
+}
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تسجيل طالب</title><link rel="stylesheet" href="style.css"></head><body>
+<div class="wrap"><div class="card"><h1>📝 تسجيل طالب في <?=htmlspecialchars($course["course_name"],ENT_QUOTES,"UTF-8")?></h1>
+<?php if($message):?><div class="msg"><?=htmlspecialchars($message,ENT_QUOTES,"UTF-8")?></div><?php endif;?>
+<form method="post" enctype="multipart/form-data">
+<input type="hidden" name="course_id" value="<?=$cid?>"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars(csrf_token(),ENT_QUOTES,"UTF-8")?>">
+<label>اسم الطالب</label><input name="student_name" required maxlength="150">
+<label>الهاتف</label><input name="phone" maxlength="20">
+<label>الصورة</label><input type="file" name="student_image" accept="image/jpeg,image/png,image/webp,image/gif" required><br><br>
+<button>تسجيل الطالب</button></form><br><a href="index.php">العودة</a></div></div></body></html>
+
+
+
+==================== edit_student.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";$id=(int)($_GET["id"]??$_POST["id"]??0);if($id<=0)exit("رقم غير صحيح.");$s=$conn->prepare("SELECT * FROM students WHERE id=?");$s->bind_param("i",$id);$s->execute();$student=$s->get_result()->fetch_assoc();if(!$student)exit("الطالب غير موجود.");$message="";
+function si($file){if(($file["error"]??4)!==UPLOAD_ERR_OK||($file["size"]??0)>5242880)return false;$f=new finfo(FILEINFO_MIME_TYPE);$m=$f->file($file["tmp_name"]);$a=["image/jpeg"=>"jpg","image/png"=>"png","image/webp"=>"webp","image/gif"=>"gif"];if(!isset($a[$m]))return false;$d=__DIR__."/uploads/students";if(!is_dir($d))mkdir($d,0755,true);$n=bin2hex(random_bytes(16)).".".$a[$m];return move_uploaded_file($file["tmp_name"],$d."/".$n)?"uploads/students/".$n:false;}
+if($_SERVER["REQUEST_METHOD"]==="POST"){verify_csrf();$name=trim($_POST["student_name"]??"");$phone=trim($_POST["phone"]??"");if(mb_strlen($name)<2||mb_strlen($name)>150)$message="اسم الطالب يجب أن يكون بين 2 و150 حرفاً.";elseif($phone!==""&&!preg_match('/^[0-9+\-\s]{6,20}$/',$phone))$message="رقم الهاتف غير صحيح.";else{$new=null;if(($_FILES["student_image"]["error"]??4)!==UPLOAD_ERR_NO_FILE)$new=si($_FILES["student_image"]);if(isset($_FILES["student_image"])&&($_FILES["student_image"]["error"]??4)!==UPLOAD_ERR_NO_FILE&&!$new)$message="الصورة غير صحيحة.";if(!$message){if($new){$u=$conn->prepare("UPDATE students SET student_name=?,phone=?,student_image=? WHERE id=?");$u->bind_param("sssi",$name,$phone,$new,$id);}else{$u=$conn->prepare("UPDATE students SET student_name=?,phone=? WHERE id=?");$u->bind_param("ssi",$name,$phone,$id);}if($u->execute()){if($new&&!empty($student["student_image"]))@unlink(__DIR__."/".$student["student_image"]);header("Location:students.php");exit;}if($new)@unlink(__DIR__."/".$new);$message="حدث خطأ.";}}}
+?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تعديل الطالب</title><link rel="stylesheet" href="style.css"></head><body><div class="wrap"><div class="card"><h1>✏️ تعديل الطالب</h1><?php if($message):?><div class="msg err"><?=htmlspecialchars($message,ENT_QUOTES,"UTF-8")?></div><?php endif;?><form method="post" enctype="multipart/form-data"><input type="hidden" name="id" value="<?=$id?>"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars(csrf_token(),ENT_QUOTES,"UTF-8")?>"><label>اسم الطالب</label><input name="student_name" value="<?=htmlspecialchars($student["student_name"],ENT_QUOTES,"UTF-8")?>" required><label>الهاتف</label><input name="phone" value="<?=htmlspecialchars($student["phone"]??"",ENT_QUOTES,"UTF-8")?>"><label>صورة جديدة اختيارية</label><input type="file" name="student_image" accept="image/jpeg,image/png,image/webp,image/gif"><br><br><button>حفظ</button></form><br><a href="students.php">العودة</a></div></div></body></html>
+
+
+==================== delete_student.php ====================
+
+<?php
+require_once "auth.php";requireAdmin();require_once "db.php";
+if($_SERVER["REQUEST_METHOD"]!=="POST")exit("طريقة الحذف غير مسموحة.");verify_csrf();$id=(int)($_POST["id"]??0);if($id<=0)exit("رقم غير صحيح.");
+$s=$conn->prepare("SELECT student_image FROM students WHERE id=?");$s->bind_param("i",$id);$s->execute();$st=$s->get_result()->fetch_assoc();if(!$st)exit("الطالب غير موجود.");
+$conn->begin_transaction();try{$a=$conn->prepare("DELETE FROM course_student WHERE student_id=?");$a->bind_param("i",$id);$a->execute();$b=$conn->prepare("DELETE FROM students WHERE id=?");$b->bind_param("i",$id);$b->execute();$conn->commit();if(!empty($st["student_image"]))@unlink(__DIR__."/".$st["student_image"]);header("Location:students.php");exit;}catch(Throwable $e){$conn->rollback();exit("حدث خطأ أثناء الحذف.");}
+?>
+
+
+==================== register_admin.php ====================
+
+<?php
+session_start();require_once "db.php";$count=(int)($conn->query("SELECT COUNT(*) n FROM admins")->fetch_assoc()["n"]??0);if($count>0)exit("تم إنشاء حساب مدير بالفعل.");
+if(empty($_SESSION["csrf_token"]))$_SESSION["csrf_token"]=bin2hex(random_bytes(32));$e=[];
+if($_SERVER["REQUEST_METHOD"]==="POST"){if(!hash_equals($_SESSION["csrf_token"],$_POST["csrf_token"]??""))$e[]="طلب غير صالح.";$n=trim($_POST["name"]??"");$mail=trim($_POST["email"]??"");$p=$_POST["password"]??"";if(mb_strlen($n)<2)$e[]="الاسم مطلوب.";if(!filter_var($mail,FILTER_VALIDATE_EMAIL))$e[]="البريد غير صحيح.";if(strlen($p)<8)$e[]="كلمة المرور 8 أحرف على الأقل.";if(!$e){$h=password_hash($p,PASSWORD_DEFAULT);$role="admin";$status=1;$s=$conn->prepare("INSERT INTO admins(name,email,password,role,status) VALUES(?,?,?,?,?)");$s->bind_param("ssssi",$n,$mail,$h,$role,$status);if($s->execute()){header("Location:login.php");exit;}$e[]="تعذر إنشاء الحساب.";}}?>
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>إنشاء المدير الأول</title><link rel="stylesheet" href="style.css"></head><body><div class="wrap" style="max-width:500px"><div class="card"><h1>إنشاء حساب المدير الأول</h1><?php foreach($e as $x):?><div class="msg err"><?=htmlspecialchars($x,ENT_QUOTES,"UTF-8")?></div><?php endforeach;?><form method="post"><input type="hidden" name="csrf_token" value="<?=htmlspecialchars($_SESSION["csrf_token"],ENT_QUOTES,"UTF-8")?>"><label>الاسم</label><input name="name" required><label>البريد</label><input type="email" name="email" required><label>كلمة المرور</label><input type="password" name="password" minlength="8" required><br><br><button>إنشاء</button></form></div></div></body></html>
+

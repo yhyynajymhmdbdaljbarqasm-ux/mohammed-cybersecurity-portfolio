@@ -1,0 +1,1 @@
+<?php require_once "auth.php";requireAdmin();header("Location:index.php");exit;?>
